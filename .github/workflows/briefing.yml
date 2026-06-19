@@ -1,0 +1,59 @@
+name: 메일 브리핑 자동 작성
+
+# ── 언제 실행할지 ──
+on:
+  schedule:
+    # GitHub Actions의 cron은 'UTC(세계표준시)' 기준입니다.
+    # 한국시간(KST)은 UTC보다 9시간 빠르므로 9를 빼서 적습니다.
+    #   KST 08:00  →  UTC 23:00 (전날)
+    #   KST 13:00  →  UTC 04:00
+    #   KST 19:00  →  UTC 10:00
+    - cron: "0 23 * * *"   # 한국시간 오전 08:00
+    - cron: "0 4 * * *"    # 한국시간 오후 01:00
+    - cron: "0 10 * * *"   # 한국시간 오후 07:00
+  # 깃허브 화면에서 '수동 실행' 버튼으로도 돌릴 수 있게 함 (테스트용으로 편리)
+  workflow_dispatch:
+
+# 실행 결과(last_run.txt)를 저장소에 다시 커밋하려면 쓰기 권한이 필요합니다.
+permissions:
+  contents: write
+
+jobs:
+  briefing:
+    runs-on: ubuntu-latest
+    steps:
+      # (1) 내 저장소 코드를 가져온다
+      - name: 코드 가져오기
+        uses: actions/checkout@v4
+
+      # (2) 파이썬 설치
+      - name: 파이썬 준비
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # (3) 필요한 부품(라이브러리) 설치
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      # (4) 프로그램 실행 — 비밀값은 GitHub Secrets에서 환경변수로 주입
+      - name: 브리핑 실행
+        env:
+          NAVER_EMAIL_1: ${{ secrets.NAVER_EMAIL_1 }}
+          NAVER_APP_PASSWORD_1: ${{ secrets.NAVER_APP_PASSWORD_1 }}
+          NAVER_EMAIL_2: ${{ secrets.NAVER_EMAIL_2 }}
+          NAVER_APP_PASSWORD_2: ${{ secrets.NAVER_APP_PASSWORD_2 }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_PARENT_PAGE_ID: ${{ secrets.NOTION_PARENT_PAGE_ID }}
+        run: python main.py
+
+      # (5) 중복 방지 메모지(last_run.txt)가 바뀌었으면 저장소에 다시 커밋
+      - name: 실행 시각 저장
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          # last_run.txt 는 .gitignore에 있으므로 -f(강제)로 추가
+          git add -f last_run.txt
+          # 바뀐 게 있을 때만 커밋 (없으면 그냥 통과)
+          git diff --cached --quiet || git commit -m "chore: update last_run.txt [skip ci]"
+          git push
