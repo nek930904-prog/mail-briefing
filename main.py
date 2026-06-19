@@ -181,6 +181,9 @@ def is_collab(subject):
 NOTION_API = "https://api.notion.com/v1/pages"
 NOTION_VERSION = "2022-06-28"  # 노션 API 버전 (고정)
 
+# 협업 메일 줄을 클릭하면 열릴 주소 (네이버 메일함)
+NAVER_MAIL_URL = "https://mail.naver.com"
+
 
 def notion_headers(token):
     """노션과 대화할 때 매번 붙이는 '신분증'(헤더)."""
@@ -191,14 +194,18 @@ def notion_headers(token):
     }
 
 
-def text_block(content, emoji=""):
-    """노션 페이지에 들어갈 '문단 한 줄'을 만든다."""
+def text_block(content, emoji="", link=None):
+    """노션 페이지에 들어갈 '문단 한 줄'을 만든다.
+    link 을 주면 그 줄 전체가 클릭 가능한 링크가 된다."""
     prefix = f"{emoji} " if emoji else ""
+    text_obj = {"content": prefix + content}
+    if link:
+        text_obj["link"] = {"url": link}  # 클릭하면 이 주소로 연결
     return {
         "object": "block",
         "type": "paragraph",
         "paragraph": {
-            "rich_text": [{"type": "text", "text": {"content": prefix + content}}]
+            "rich_text": [{"type": "text", "text": text_obj}]
         },
     }
 
@@ -232,8 +239,10 @@ def create_briefing_page(token, parent_page_id, title, collab_mails, normal_mail
     # ── 협업 메일 (맨 위, 강조) ──
     children.append(heading_block(f"🔥 협업 메일 ({len(collab_mails)}건)"))
     if collab_mails:
+        children.append(text_block("아래 줄을 클릭하면 네이버 메일함이 열립니다."))
         for mail in collab_mails:
-            children.append(text_block(build_mail_line(mail), emoji="⭐"))
+            # 협업 메일은 줄 전체를 클릭하면 네이버 메일함으로 연결
+            children.append(text_block(build_mail_line(mail), emoji="⭐", link=NAVER_MAIL_URL))
     else:
         children.append(text_block("협업 메일이 없습니다."))
 
