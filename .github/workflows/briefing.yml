@@ -5,12 +5,13 @@ on:
   schedule:
     # GitHub Actions의 cron은 'UTC(세계표준시)' 기준입니다.
     # 한국시간(KST)은 UTC보다 9시간 빠르므로 9를 빼서 적습니다.
-    #   KST 08:00  →  UTC 23:00 (전날)
-    #   KST 13:00  →  UTC 04:00
-    #   KST 19:00  →  UTC 10:00
-    - cron: "0 23 * * *"   # 한국시간 오전 08:00
-    - cron: "0 4 * * *"    # 한국시간 오후 01:00
-    - cron: "0 10 * * *"   # 한국시간 오후 07:00
+    # 정각(:00)은 전 세계 예약이 몰려 잘 밀리므로, 15분 비켜서 :15에 실행합니다.
+    #   KST 08:15  →  UTC 23:15 (전날)
+    #   KST 13:15  →  UTC 04:15
+    #   KST 19:15  →  UTC 10:15
+    - cron: "15 23 * * *"   # 한국시간 오전 08:15
+    - cron: "15 4 * * *"    # 한국시간 오후 01:15
+    - cron: "15 10 * * *"   # 한국시간 오후 07:15
   # 깃허브 화면에서 '수동 실행' 버튼으로도 돌릴 수 있게 함 (테스트용으로 편리)
   workflow_dispatch:
 
@@ -48,12 +49,23 @@ jobs:
         run: python main.py
 
       # (5) 중복 방지 메모지(last_run.txt)가 바뀌었으면 저장소에 다시 커밋
+      #     원격이 앞서 있어도 충돌 없이 올리도록, 매번 원격 최신 상태로 맞춘 뒤
+      #     우리 last_run.txt 를 얹어서 커밋/푸시한다 (최대 3회 재시도).
       - name: 실행 시각 저장
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          # last_run.txt 는 .gitignore에 있으므로 -f(강제)로 추가
-          git add -f last_run.txt
-          # 바뀐 게 있을 때만 커밋 (없으면 그냥 통과)
-          git diff --cached --quiet || git commit -m "chore: update last_run.txt [skip ci]"
-          git push
+          # 방금 만든 last_run.txt 내용을 임시 보관 (없으면 저장할 게 없으니 종료)
+          cp last_run.txt "$RUNNER_TEMP/last_run.txt" 2>/dev/null || { echo "last_run.txt 없음 - 건너뜀"; exit 0; }
+          for i in 1 2 3; do
+            git fetch origin main
+            git reset --hard origin/main           # 원격 최신으로 맞춤
+            cp "$RUNNER_TEMP/last_run.txt" last_run.txt
+            git add -f last_run.txt                 # .gitignore 대상이라 -f(강제)
+            if git diff --cached --quiet; then echo "변경 없음 - 건너뜀"; exit 0; fi
+            git commit -m "chore: update last_run.txt [skip ci]"
+            if git push origin main; then echo "저장 성공"; exit 0; fi
+            echo "push 충돌 - 재시도 $i"; sleep 3
+          done
+          # 끝까지 실패해도 브리핑은 이미 성공했으니 워크플로우는 실패로 처리하지 않음
+          echo "실행 시각 저장만 실패(브리핑은 정상). 다음 실행 때 자동 보정됨."; exit 0
